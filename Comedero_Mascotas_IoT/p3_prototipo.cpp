@@ -10,8 +10,7 @@ const char* apPassword = "12345678";
 const int servoComidaPin = 14;      // Servo para dispensar comida
 const int servoLimpiezaPin = 27;    // Servo para limpiar plato
 const int bombaAguaPin = 26;        // Bomba de agua (MOSFET o relevador)
-const int sensorAguaPin = 35;       // Sensor de riego HCW-M214
-const int sensorComidaPin = 32;     // Sensor IR TCRT5000
+const int sensorComidaPin = 32;     // Sensor IR TCRT5000 (comida)
 
 // --- Objetos Servo ---
 Servo servoComida;
@@ -19,7 +18,6 @@ Servo servoLimpieza;
 
 // --- Variables de estado ---
 bool comidaEnPlato = false;
-bool aguaEnDeposito = false;
 
 // --- WebServer ---
 WebServer server(80);
@@ -52,7 +50,7 @@ void setup() {
   servoComida.attach(servoComidaPin);
   servoLimpieza.attach(servoLimpiezaPin);
   pinMode(bombaAguaPin, OUTPUT);
-  pinMode(sensorAguaPin, INPUT);
+  digitalWrite(bombaAguaPin, HIGH); // Inicia con la bomba APAGADA (HIGH para lógica inversa)
   pinMode(sensorComidaPin, INPUT);
 
   // Crear Access Point
@@ -75,20 +73,20 @@ void loop() {
   leerSensores();
 
   // --- Control no bloqueante del servo de comida ---
-  if (servoComidaEnMovimiento && (millis() - servoComidaStartTime > 700)) { // 700 ms abierto
+  if (servoComidaEnMovimiento && (millis() - servoComidaStartTime > 700)) {
     servoComida.write(0); // Cerrar compuerta
     servoComidaEnMovimiento = false;
   }
 
   // --- Control no bloqueante del servo de limpieza ---
-  if (servoLimpiezaEnMovimiento && (millis() - servoLimpiezaStartTime > 700)) { // 700 ms abierto
+  if (servoLimpiezaEnMovimiento && (millis() - servoLimpiezaStartTime > 700)) {
     servoLimpieza.write(0); // Cerrar compuerta
     servoLimpiezaEnMovimiento = false;
   }
 
   // --- Control no bloqueante de la bomba ---
-  if (bombaEnMovimiento && (millis() - bombaStartTime > 2000)) { // 2 segundos
-    digitalWrite(bombaAguaPin, LOW); // Apagar bomba
+  if (bombaEnMovimiento && (millis() - bombaStartTime > 2000)) {
+    digitalWrite(bombaAguaPin, HIGH); // Apagar bomba (HIGH para lógica inversa)
     bombaEnMovimiento = false;
   }
 }
@@ -96,7 +94,7 @@ void loop() {
 // --- Funciones de control ---
 void moverServoComida() {
   if (!servoComidaEnMovimiento) {
-    servoComida.write(90); // Abrir compuerta (ajusta ángulo según tu mecanismo)
+    servoComida.write(45); // Abrir compuerta
     servoComidaStartTime = millis();
     servoComidaEnMovimiento = true;
   }
@@ -104,7 +102,7 @@ void moverServoComida() {
 
 void moverServoLimpieza() {
   if (!servoLimpiezaEnMovimiento) {
-    servoLimpieza.write(180); // Abrir compuerta de limpieza (ajusta ángulo)
+    servoLimpieza.write(180); // Abrir compuerta de limpieza
     servoLimpiezaStartTime = millis();
     servoLimpiezaEnMovimiento = true;
   }
@@ -112,7 +110,7 @@ void moverServoLimpieza() {
 
 void activarBombaAgua() {
   if (!bombaEnMovimiento) {
-    digitalWrite(bombaAguaPin, HIGH); // Encender bomba
+    digitalWrite(bombaAguaPin, LOW); // Encender bomba (LOW para lógica inversa)
     bombaStartTime = millis();
     bombaEnMovimiento = true;
   }
@@ -120,13 +118,8 @@ void activarBombaAgua() {
 
 // --- Lectura de sensores ---
 void leerSensores() {
-  // Sensor de comida (TCRT5000)
-  int comidaSensorValue = digitalRead(sensorComidaPin);
-  comidaEnPlato = (comidaSensorValue == LOW); // Ajusta según tu circuito
-
-  // Sensor de agua en depósito (HCW-M214)
-  int aguaSensorValue = analogRead(sensorAguaPin);
-  aguaEnDeposito = (aguaSensorValue > 1000); // Ajusta el umbral
+  // Solo lectura del sensor de comida (TCRT5000)
+  comidaEnPlato = (digitalRead(sensorComidaPin) == LOW); // LOW = comida presente
 }
 
 // --- Handlers Web ---
@@ -147,7 +140,7 @@ void handleRoot() {
       <button class="button" onclick="fetch('/dispensarComida')">Dispensar Comida</button>
       <button class="button" onclick="fetch('/dispensarAgua')">Dispensar Agua</button>
       <button class="button" onclick="fetch('/limpiarPlato')">Limpiar Plato</button>
-      <h2>Estado Sensores</h2>
+      <h2>Estado del Plato</h2>
       <div id="status"></div>
       <script>
         function updateStatus() {
@@ -155,8 +148,7 @@ void handleRoot() {
             .then(r => r.json())
             .then(data => {
               document.getElementById('status').innerHTML =
-                'Comida en plato: ' + (data.comida ? 'Si' : 'No') + '<br>' +
-                'Agua en deposito: ' + (data.agua ? 'Si' : 'No');
+                'Comida en plato: ' + (data.comida ? 'Si' : 'No');
             });
         }
         setInterval(updateStatus, 1000);
@@ -184,7 +176,6 @@ void handleLimpiarPlato() {
 }
 
 void handleGetStatus() {
-  String json = "{\"comida\": " + String(comidaEnPlato ? "true" : "false") +
-                ", \"agua\": " + String(aguaEnDeposito ? "true" : "false") + "}";
+  String json = "{\"comida\": " + String(comidaEnPlato ? "true" : "false") + "}";
   server.send(200, "application/json", json);
 }
